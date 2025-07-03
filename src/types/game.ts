@@ -37,9 +37,11 @@ export interface CartItem {
 }
 
 export interface User {
-  id: string
+  id?: string
+  _id?: string
   name: string
   email: string
+  rol?: string      // <-- agrega esto
   isGuest?: boolean
 }
 

@@ -17,11 +17,11 @@ export function RegisterModal() {
     confirmPassword: "",
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [loading, setLoading] = useState(false)
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
-    // Limpiar error cuando el usuario empiece a escribir
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: "" }))
     }
@@ -54,27 +54,46 @@ export function RegisterModal() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!validateForm()) {
       return
     }
 
-    // Simular registro exitoso
-    dispatch({
-      type: "REGISTER",
-      payload: {
-        id: Date.now().toString(),
-        name: formData.name,
-        email: formData.email,
-        isGuest: false,
-      },
-    })
+    setLoading(true)
+    try {
+      const response = await fetch("http://localhost:3000/auth/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          nombre: formData.name,
+          email: formData.email,
+          password: formData.password,
+          rol: "usuario",
+        }),
+      })
 
-    // Limpiar formulario
-    setFormData({ name: "", email: "", password: "", confirmPassword: "" })
-    setErrors({})
+      if (!response.ok) {
+        const errorData = await response.json()
+        setErrors({ email: errorData.message || "Error al registrar usuario" })
+        setLoading(false)
+        return
+      }
+
+      // Registro exitoso
+      setFormData({ name: "", email: "", password: "", confirmPassword: "" })
+      setErrors({})
+      dispatch({ type: "TOGGLE_REGISTER_MODAL" })
+      // Aquí podrías mostrar un mensaje de éxito o redirigir al login
+
+    } catch (error) {
+      setErrors({ email: "Error de red o servidor" })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const switchToLogin = () => {
@@ -101,6 +120,7 @@ export function RegisterModal() {
               onChange={handleInputChange}
               placeholder="Tu nombre completo"
               className={errors.name ? "border-red-500" : ""}
+              disabled={loading}
             />
             {errors.name && <p className="text-sm text-red-500 mt-1">{errors.name}</p>}
           </div>
@@ -115,6 +135,7 @@ export function RegisterModal() {
               onChange={handleInputChange}
               placeholder="tu@email.com"
               className={errors.email ? "border-red-500" : ""}
+              disabled={loading}
             />
             {errors.email && <p className="text-sm text-red-500 mt-1">{errors.email}</p>}
           </div>
@@ -129,6 +150,7 @@ export function RegisterModal() {
               onChange={handleInputChange}
               placeholder="••••••••"
               className={errors.password ? "border-red-500" : ""}
+              disabled={loading}
             />
             {errors.password && <p className="text-sm text-red-500 mt-1">{errors.password}</p>}
           </div>
@@ -143,21 +165,22 @@ export function RegisterModal() {
               onChange={handleInputChange}
               placeholder="••••••••"
               className={errors.confirmPassword ? "border-red-500" : ""}
+              disabled={loading}
             />
             {errors.confirmPassword && <p className="text-sm text-red-500 mt-1">{errors.confirmPassword}</p>}
           </div>
 
-          <Button type="submit" className="w-full">
-            Crear Cuenta
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Creando..." : "Crear Cuenta"}
           </Button>
 
           <div className="text-center">
-            <Button type="button" variant="link" onClick={switchToLogin} className="text-sm">
+            <Button type="button" variant="link" onClick={switchToLogin} className="text-sm" disabled={loading}>
               ¿Ya tienes cuenta? Inicia sesión
             </Button>
           </div>
         </form>
       </DialogContent>
-    </Dialog>
+      </Dialog>
   )
 }

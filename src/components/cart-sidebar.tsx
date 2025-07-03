@@ -8,11 +8,11 @@ import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent } from "@/components/ui/card"
 import { useApp } from "../context/app-context"
-import { games } from "../data/games"
 import { getRecommendedGames } from "../utils/recommendations"
 import { formatPriceSimple } from "../utils/currency"
+import type { Game } from "../types/game"
 
-export function CartSidebar() {
+export function CartSidebar({ games, fetchGames }: { games: Game[], fetchGames: () => void }) {
   const { state, dispatch } = useApp()
 
   const total = state.cart.reduce((sum, item) => sum + item.game.price * item.quantity, 0)
@@ -21,41 +21,96 @@ export function CartSidebar() {
   // Obtener productos recomendados
   const recommendedGames = getRecommendedGames(state.cart, games, 4)
 
-  const updateQuantity = (gameId: string, newQuantity: number) => {
+  // Cambia la cantidad de un producto en el carrito y sincroniza con backend
+  const updateQuantity = async (gameId: string, newQuantity: number) => {
+    const item = state.cart.find(item => item.game.id === gameId)
+    if (!item) return
+
     if (newQuantity <= 0) {
       dispatch({ type: "REMOVE_FROM_CART", payload: gameId })
+      // (Opcional) podrías llamar a un endpoint para eliminar del carrito en backend
     } else {
+      // Control de stock
+      if (newQuantity > item.game.stock) {
+        alert("No puedes agregar más de lo disponible en stock.")
+        return
+      }
+      // Sincroniza con backend
+      if (state.user) {
+        const userId = state.user._id || state.user.id
+        await fetch(`http://localhost:3000/carro/${userId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productoId: gameId, cantidad: newQuantity })
+        })
+      }
       dispatch({ type: "UPDATE_CART_QUANTITY", payload: { gameId, quantity: newQuantity } })
     }
   }
 
-  const handleCheckout = () => {
+  // Agrega un producto recomendado al carrito y sincroniza con backend
+  const addRecommendedToCart = async (game: Game) => {
+    if (!state.user) {
+      dispatch({ type: "TOGGLE_LOGIN_MODAL" })
+      return
+    }
+    const cartItem = state.cart.find(item => item.game.id === game.id)
+    const newQuantity = (cartItem?.quantity || 0) + 1
+    if (newQuantity > game.stock) {
+      alert("No puedes agregar más de lo disponible en stock.")
+      return
+    }
+    const userId = state.user._id || state.user.id
+    await fetch(`http://localhost:3000/carro/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productoId: game.id, cantidad: newQuantity })
+    })
+    dispatch({ type: "ADD_TO_CART", payload: game })
+  }
+
+  // Checkout
+  const handleCheckout = async () => {
     if (!state.user) {
       dispatch({ type: "TOGGLE_LOGIN_MODAL" })
       return
     }
 
-    // Simular compra
-    const purchase = {
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString(),
-      games: [...state.cart],
-      total: total,
-      status: "completed" as const,
-      userEmail: state.user.isGuest ? undefined : state.user.email,
+    const productos = state.cart.map(item => ({
+      productId: item.game.id,
+      cantidad: item.quantity
+    }))
+
+    // Usa siempre _id para userId, pero si no existe, usa id
+    const userId = state.user._id || state.user.id
+
+    // AGREGA ESTOS LOGS:
+  console.log("DEBUG user:", state.user)
+  console.log("DEBUG userId:", userId)
+  
+    const body = {
+      userId,
+      productos
     }
 
-    dispatch({ type: "ADD_PURCHASE", payload: purchase })
-    dispatch({ type: "TOGGLE_CART" })
+    // Debug: revisa qué se está enviando
+    console.log("userId enviado:", body.userId)
+    console.log("user:", state.user)
 
-    // Mostrar mensaje diferente para invitados
-    if (state.user.isGuest) {
-      alert("¡Compra realizada! Para ver tu historial de compras, regístrate con una cuenta.")
+    const res = await fetch("http://localhost:3000/compra", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    })
+
+    if (res.ok) {
+      dispatch({ type: "CLEAR_CART" })
+      dispatch({ type: "TOGGLE_CART" })
+      fetchGames()
+      alert("¡Compra realizada con éxito!")
+    } else {
+      alert("Error al realizar la compra")
     }
-  }
-
-  const addRecommendedToCart = (game: (typeof games)[0]) => {
-    dispatch({ type: "ADD_TO_CART", payload: game })
   }
 
   return (
@@ -154,7 +209,7 @@ export function CartSidebar() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                            onClick={() => dispatch({ type: "REMOVE_FROM_CART", payload: item.game.id })}
+                            onClick={() => updateQuantity(item.game.id, 0)}
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -197,7 +252,7 @@ export function CartSidebar() {
 
                                 <div className="flex items-center gap-1 mb-2">
                                   <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                  <span className="text-xs font-medium">{game.rating}</span>
+                                  <span className="text-xs font-medium">{Math.round(game.rating)}</span>
                                 </div>
 
                                 <div className="flex items-center gap-2 mb-2">
