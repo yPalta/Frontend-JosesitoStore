@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useReducer, type ReactNode } from "react"
+import { createContext, useContext, useReducer, useEffect, type ReactNode } from "react"
 import type { Game, CartItem, User, Purchase, UserRating, Comment } from "../types/game"
 
 interface AppState {
@@ -33,6 +33,22 @@ type AppAction =
   | { type: "TOGGLE_PURCHASE_HISTORY" }
   | { type: "TOGGLE_CART" }
   | { type: "UPDATE_GAMES"; payload: Game[] }
+  | { type: "SET_PURCHASES"; payload: Purchase[] } // <-- AGREGADO
+
+const getInitialState = (): AppState => {
+  if (typeof window === "undefined") return initialState
+  let user = null
+  let cart: CartItem[] = []
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null")
+    cart = JSON.parse(localStorage.getItem("cart") || "[]")
+  } catch {}
+  return {
+    ...initialState,
+    user,
+    cart,
+  }
+}
 
 const initialState: AppState = {
   user: null,
@@ -53,7 +69,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ...state,
         user: action.payload,
         isLoginModalOpen: false,
-        guestId: action.payload.isGuest ? action.payload.id : null,
+        guestId: action.payload.isGuest ? action.payload.id ?? null : null,
       }
     case "REGISTER":
       return {
@@ -63,7 +79,11 @@ function appReducer(state: AppState, action: AppAction): AppState {
         guestId: null,
       }
     case "LOGOUT":
-      return { ...state, user: null, guestId: null }
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("user")
+        localStorage.removeItem("cart")
+      }
+      return { ...state, user: null, guestId: null, cart: [] }
     case "SET_GUEST":
       return {
         ...state,
@@ -102,12 +122,20 @@ function appReducer(state: AppState, action: AppAction): AppState {
         ),
       }
     case "CLEAR_CART":
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("cart")
+      }
       return { ...state, cart: [] }
     case "ADD_PURCHASE":
       return {
         ...state,
         purchases: [action.payload, ...state.purchases],
         cart: [],
+      }
+    case "SET_PURCHASES": // <-- AGREGADO
+      return {
+        ...state,
+        purchases: action.payload,
       }
     case "ADD_RATING":
       return {
@@ -163,7 +191,20 @@ const AppContext = createContext<{
 } | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(appReducer, initialState)
+  const [state, dispatch] = useReducer(appReducer, initialState, getInitialState)
+
+  // Persist user and cart in localStorage
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("user", JSON.stringify(state.user))
+    }
+  }, [state.user])
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cart", JSON.stringify(state.cart))
+    }
+  }, [state.cart])
 
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>
 }

@@ -10,45 +10,87 @@ import { useApp } from "../context/app-context"
 
 interface RatingSystemProps {
   game: Game
+  comments: any[]
+  loading?: boolean
+  setComments?: (comments: any[]) => void
+  reloadGame?: () => void
 }
 
-export function RatingSystem({ game }: RatingSystemProps) {
+export function RatingSystem({ game, comments, loading, setComments, reloadGame }: RatingSystemProps) {
   const { state, dispatch } = useApp()
   const [userRating, setUserRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
   const [comment, setComment] = useState("")
   const [showCommentForm, setShowCommentForm] = useState(false)
 
-  const handleRatingSubmit = () => {
-    if (!state.user || userRating === 0) return
+  // Unifica comentarios estructurados y simples (strings)
+  const allComments =
+    (comments && comments.length > 0
+      ? comments
+      : game.comments && game.comments.length > 0
+      ? game.comments
+      : []) || []
 
-    const newRating: UserRating = {
-      userId: state.user.id,
-      userName: state.user.name,
-      rating: userRating,
-      date: new Date().toLocaleDateString(),
-    }
+  // Verifica si el usuario ya comentó o valoró
+  const userAlreadyCommented = state.user
+    ? allComments.some(
+        (c: any) =>
+          (typeof c === "object" && (c.userId === state.user?.id || c.userName === state.user?.name))
+      )
+    : false
 
-    dispatch({ type: "ADD_RATING", payload: { gameId: game.id, rating: newRating } })
+  const handleRatingSubmit = async () => {
+    if (!state.user || userRating === 0 || userAlreadyCommented) return
+
+    await fetch(`http://localhost:3000/producto/${game.id}/valoracion`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ valoracion: userRating }),
+    })
+
     setUserRating(0)
+
+    // Recarga comentarios/valoraciones después de enviar
+    if (typeof window !== "undefined" && typeof setComments === "function") {
+      setTimeout(() => {
+        fetch(`http://localhost:3000/producto/${game.id}/valoraciones`)
+          .then(res => res.json())
+          .then(data => {
+            setComments(data.comentarios || [])
+          })
+      }, 300)
+    }
+    if (typeof reloadGame === "function") {
+      reloadGame()
+    }
   }
 
-  const handleCommentSubmit = () => {
-    if (!state.user || !comment.trim()) return
+  const handleCommentSubmit = async () => {
+    if (!state.user || !comment.trim() || userAlreadyCommented) return
 
-    const newComment: Comment = {
-      id: Date.now().toString(),
-      userId: state.user.id,
-      userName: state.user.name,
-      content: comment.trim(),
-      date: new Date().toLocaleDateString(),
-      rating: userRating > 0 ? userRating : undefined,
-    }
+    await fetch(`http://localhost:3000/producto/${game.id}/comentario`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comentario: comment.trim(), valoracion: userRating }),
+    })
 
-    dispatch({ type: "ADD_COMMENT", payload: { gameId: game.id, comment: newComment } })
     setComment("")
     setUserRating(0)
     setShowCommentForm(false)
+
+    // Recarga comentarios después de enviar
+    if (typeof window !== "undefined" && typeof setComments === "function") {
+      setTimeout(() => {
+        fetch(`http://localhost:3000/producto/${game.id}/valoraciones`)
+          .then(res => res.json())
+          .then(data => {
+            setComments(data.comentarios || [])
+          })
+      }, 300)
+    }
+    if (typeof reloadGame === "function") {
+      reloadGame()
+    }
   }
 
   const requiresAuth = () => {
@@ -68,12 +110,12 @@ export function RatingSystem({ game }: RatingSystemProps) {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
             <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-            <span className="font-semibold text-lg">{game.rating}</span>
+            <span className="font-semibold text-lg">{Math.round(Number(game.rating))}</span>
             <span className="text-muted-foreground">({game.reviewCount} valoraciones)</span>
           </div>
         </div>
 
-        {state.user && (
+        {state.user && !userAlreadyCommented && (
           <div className="space-y-3">
             <p className="text-sm font-medium">Tu valoración:</p>
             <div className="flex items-center gap-2">
@@ -101,6 +143,12 @@ export function RatingSystem({ game }: RatingSystemProps) {
             </div>
           </div>
         )}
+
+        {state.user && userAlreadyCommented && (
+          <div className="text-sm text-muted-foreground">
+            Ya enviaste tu valoración o comentario para este juego.
+          </div>
+        )}
       </div>
 
       <Separator />
@@ -110,10 +158,10 @@ export function RatingSystem({ game }: RatingSystemProps) {
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <MessageCircle className="h-5 w-5" />
-            Comentarios ({game.comments?.length || 0})
+            Comentarios ({allComments.length})
           </h3>
 
-          {state.user && (
+          {state.user && !userAlreadyCommented && (
             <Button
               variant="outline"
               size="sm"
@@ -128,7 +176,7 @@ export function RatingSystem({ game }: RatingSystemProps) {
         </div>
 
         {/* Comment Form */}
-        {showCommentForm && state.user && (
+        {showCommentForm && state.user && !userAlreadyCommented && (
           <Card>
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center gap-2">
@@ -164,23 +212,37 @@ export function RatingSystem({ game }: RatingSystemProps) {
 
         {/* Comments List */}
         <div className="space-y-3">
-          {game.comments && game.comments.length > 0 ? (
-            game.comments.map((comment) => (
-              <Card key={comment.id}>
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">Cargando comentarios...</div>
+          ) : allComments.length > 0 ? (
+            allComments.map((comment: any, idx: number) => (
+              <Card key={comment.id || comment._id || idx}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{comment.userName}</span>
-                      {comment.rating && (
+                      <span className="font-medium">
+                        {typeof comment === "string"
+                          ? "Usuario"
+                          : comment.userName || comment.usuario || "Usuario"}
+                      </span>
+                      {comment.rating || comment.valoracion ? (
                         <div className="flex items-center gap-1">
                           <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm">{comment.rating}</span>
+                          <span className="text-sm">{comment.rating || comment.valoracion}</span>
                         </div>
-                      )}
+                      ) : null}
                     </div>
-                    <span className="text-sm text-muted-foreground">{comment.date}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {typeof comment === "string"
+                        ? ""
+                        : comment.date || comment.fecha || ""}
+                    </span>
                   </div>
-                  <p className="text-sm leading-relaxed">{comment.content}</p>
+                  <p className="text-sm leading-relaxed">
+                    {typeof comment === "string"
+                      ? comment
+                      : comment.content || comment.comentario}
+                  </p>
                 </CardContent>
               </Card>
             ))

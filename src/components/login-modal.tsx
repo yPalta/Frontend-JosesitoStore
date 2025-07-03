@@ -13,21 +13,53 @@ export function LoginModal() {
   const { state, dispatch } = useApp()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Simulamos un login exitoso
-    dispatch({
-      type: "LOGIN",
-      payload: {
-        id: Date.now().toString(),
-        name: email.split("@")[0],
-        email: email,
-        isGuest: false,
-      },
-    })
-    setEmail("")
-    setPassword("")
+    setError(null)
+    setLoading(true)
+    try {
+      const response = await fetch("http://localhost:3000/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password, // <-- CAMBIO AQUÍ
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        setError(errorData.message || "Credenciales incorrectas")
+        setLoading(false)
+        return
+      }
+
+      const data = await response.json()
+      //console.log("LOGIN RESPONSE DATA:", data) // <-- AGREGA ESTE LOG
+      dispatch({
+        type: "LOGIN",
+        payload: {
+          _id: data.user.id,
+          id: data.user.id,
+          name: data.user.nombre,
+          email: data.user.email,
+          rol: data.user.rol, // <-- agrega esto
+          isGuest: false,
+        },
+      })
+      setEmail("")
+      setPassword("")
+      dispatch({ type: "TOGGLE_LOGIN_MODAL" })
+    } catch (err) {
+      setError("Error de red o servidor")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleGuestMode = () => {
@@ -58,6 +90,7 @@ export function LoginModal() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="tu@email.com"
               required
+              disabled={loading}
             />
           </div>
 
@@ -70,11 +103,14 @@ export function LoginModal() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              disabled={loading}
             />
           </div>
 
-          <Button type="submit" className="w-full">
-            Iniciar Sesión
+          {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
         </form>
 
@@ -88,12 +124,12 @@ export function LoginModal() {
             </div>
           </div>
 
-          <Button variant="outline" className="w-full" onClick={handleGuestMode}>
+          <Button variant="outline" className="w-full" onClick={handleGuestMode} disabled={loading}>
             Continuar como Invitado
           </Button>
 
           <div className="text-center">
-            <Button type="button" variant="link" onClick={switchToRegister} className="text-sm">
+            <Button type="button" variant="link" onClick={switchToRegister} className="text-sm" disabled={loading}>
               ¿No tienes cuenta? Regístrate
             </Button>
           </div>

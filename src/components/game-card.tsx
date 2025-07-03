@@ -17,10 +17,28 @@ interface GameCardProps {
 }
 
 export function GameCard({ game, onGameClick }: GameCardProps) {
-  const { dispatch } = useApp()
+  const { state, dispatch } = useApp()
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleAddToCart = async (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (!state.user) {
+      dispatch({ type: "TOGGLE_LOGIN_MODAL" })
+      return
+    }
+    // Verifica stock
+    const cartItem = state.cart.find(item => item.game.id === game.id)
+    const newQuantity = (cartItem?.quantity || 0) + 1
+    if (newQuantity > game.stock) {
+      alert("No puedes agregar más de lo disponible en stock.")
+      return
+    }
+    // Llama al backend
+    await fetch(`http://localhost:3000/carro/${state.user.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productoId: game.id, cantidad: newQuantity })
+    })
+    // Actualiza el estado local
     dispatch({ type: "ADD_TO_CART", payload: game })
   }
 
@@ -56,7 +74,7 @@ export function GameCard({ game, onGameClick }: GameCardProps) {
 
           <div className="flex items-center gap-1 mb-2">
             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-            <span className="text-sm font-medium">{game.rating}</span>
+            <span className="text-sm font-medium">{Math.round(game.rating)}</span>
             <span className="text-xs text-muted-foreground">({game.reviewCount.toLocaleString()})</span>
           </div>
 

@@ -1,14 +1,59 @@
 "use client"
 
+import { useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { useApp } from "../context/app-context"
 import { Button } from "@/components/ui/button"
-import { formatPriceSimple } from "../utils/currency"
+import type { Game } from "../types/game"
 
 export function PurchaseHistoryModal() {
   const { state, dispatch } = useApp()
+
+  useEffect(() => {
+    const fetchPurchases = async () => {
+      if (!state.user || !state.user._id) return
+      try {
+        const res = await fetch(`http://localhost:3000/compra/historial/${state.user._id}`)
+        if (!res.ok) return
+        const data = await res.json()
+        // Mapea la respuesta del backend al formato esperado por el frontend
+        const mapped = data.map((purchase: any) => ({
+          id: purchase._id,
+          date: new Date(purchase.fecha).toLocaleString(),
+          status: "completed",
+          games: purchase.productos.map((item: any) => {
+            const isPopulated = typeof item.productId === "object" && item.productId !== null
+            let gameId = isPopulated
+              ? item.productId._id || item.productId.id || ""
+              : item.productId
+            let gameName = isPopulated
+              ? item.productId.name || item.productId.nombre || ""
+              : ""
+            // Si no está populado, busca el nombre en state.games
+            if (!isPopulated) {
+              const found = state.games.find(g => g.id === gameId)
+              gameName = found ? found.name : `ID: ${gameId}`
+            }
+            return {
+              game: {
+                id: gameId,
+                name: gameName,
+              } as Game,
+              quantity: item.cantidad,
+            }
+          }),
+        }))
+        dispatch({ type: "SET_PURCHASES", payload: mapped })
+      } catch (err) {
+        // Manejo de error opcional
+      }
+    }
+    if (state.isPurchaseHistoryOpen) {
+      fetchPurchases()
+    }
+  }, [state.isPurchaseHistoryOpen, state.user?._id, dispatch, state.games])
 
   return (
     <Dialog open={state.isPurchaseHistoryOpen} onOpenChange={() => dispatch({ type: "TOGGLE_PURCHASE_HISTORY" })}>
@@ -54,14 +99,8 @@ export function PurchaseHistoryModal() {
                         <span>
                           {item.game.name} x{item.quantity}
                         </span>
-                        <span>{formatPriceSimple(item.game.price * item.quantity)}</span>
                       </div>
                     ))}
-                  </div>
-
-                  <div className="border-t pt-2 flex justify-between font-semibold">
-                    <span>Total:</span>
-                    <span>{formatPriceSimple(purchase.total)}</span>
                   </div>
                 </CardContent>
               </Card>
